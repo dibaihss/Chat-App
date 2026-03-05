@@ -1,36 +1,66 @@
-# Chat App (Next.js + Socket.IO)
+# Chat App Monorepo (Next.js + Socket.IO + Cosmos DB)
 
-This app uses a single Node server to:
+This repository now uses a single repo with separated apps:
 
-- Serve the Next.js frontend
-- Handle realtime private chat over Socket.IO
+- `apps/web`: Next.js frontend
+- `apps/chat-api`: REST + Socket.IO backend
+- `packages/shared`: shared chat helpers/contracts
 
-## Run
+Cosmos DB is the source of truth for:
 
-1. Install dependencies:
+- message history (`messages` container)
+- user profiles (`users`)
+- room metadata (`rooms`)
+- room memberships (`room_memberships`)
+
+## Setup
+
+1. Install dependencies from repo root:
 
 ```bash
 npm install
 ```
 
-2. Start development mode:
+2. Copy environment examples:
+
+```bash
+copy .env.example .env
+copy apps\\chat-api\\.env.example apps\\chat-api\\.env
+copy apps\\web\\.env.example apps\\web\\.env.local
+```
+
+3. Fill Cosmos credentials in `apps/chat-api/.env`.
+
+## Run
+
+Start both apps:
 
 ```bash
 npm run dev
 ```
 
-3. Build and run production mode:
+Or run separately:
 
 ```bash
-npm run build
-npm run start
+npm run dev:web
+npm run dev:api
 ```
 
-Default app URL: `http://localhost:3000`
+Default URLs:
 
-## How to test 2-user realtime chat
+- Web: `http://localhost:3000`
+- Chat API: `http://localhost:3001`
 
-1. Open `http://localhost:3000` in two browser windows.
-2. Login with different usernames (example: `alice` and `bob`).
-3. In each window, set `Send to` to the other username.
-4. Send messages and verify realtime delivery.
+## Implemented backend interfaces
+
+- `GET /users/:userId`
+- `GET /rooms/:roomId/messages?limit=50&continuation=...`
+- `GET /rooms/:roomId/members`
+- `POST /rooms/:roomId/members`
+
+Socket events:
+
+- `register`
+- `open_room` (returns message history)
+- `private_message` (persist then emit)
+- `room_message` (persist then emit)

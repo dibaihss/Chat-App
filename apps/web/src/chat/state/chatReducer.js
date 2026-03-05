@@ -8,6 +8,7 @@ export const CHAT_ACTIONS = {
   SET_SEARCH_TERM: "SET_SEARCH_TERM",
   SET_MESSAGE_INPUT: "SET_MESSAGE_INPUT",
   MESSAGE_RECEIVED: "MESSAGE_RECEIVED",
+  HISTORY_LOADED: "HISTORY_LOADED",
   SYSTEM_MESSAGE_RECEIVED: "SYSTEM_MESSAGE_RECEIVED",
   USERS_ONLINE_UPDATED: "USERS_ONLINE_UPDATED",
   UNREAD_INCREMENT: "UNREAD_INCREMENT",
@@ -21,11 +22,13 @@ export const initialChatState = {
   username: "",
   activeNav: "chat",
   activeChat: "",
+  activeRoomId: "",
   searchTerm: "",
   messageInput: "",
   messages: [],
   usersOnline: [],
   unreadByUser: {},
+  roomContinuationById: {},
   statusText: "",
   errorText: ""
 };
@@ -43,13 +46,44 @@ export function chatReducer(state, action) {
     case CHAT_ACTIONS.SET_ACTIVE_NAV:
       return { ...state, activeNav: action.payload };
     case CHAT_ACTIONS.SET_ACTIVE_CHAT:
-      return { ...state, activeChat: action.payload };
+      return { ...state, activeChat: action.payload, activeRoomId: action.roomId || state.activeRoomId };
     case CHAT_ACTIONS.SET_SEARCH_TERM:
       return { ...state, searchTerm: action.payload };
     case CHAT_ACTIONS.SET_MESSAGE_INPUT:
       return { ...state, messageInput: action.payload };
     case CHAT_ACTIONS.MESSAGE_RECEIVED:
+      if (state.messages.some((msg) => msg.id && msg.id === action.payload.id)) {
+        return state;
+      }
       return { ...state, messages: [...state.messages, action.payload] };
+    case CHAT_ACTIONS.HISTORY_LOADED: {
+      const incoming = action.payload.messages || [];
+      const existingById = new Map(
+        state.messages.filter((msg) => msg.id).map((msg) => [msg.id, msg])
+      );
+      incoming.forEach((msg) => {
+        if (msg.id) {
+          existingById.set(msg.id, msg);
+        }
+      });
+
+      const deduped = [
+        ...state.messages.filter((msg) => !msg.id),
+        ...Array.from(existingById.values())
+      ].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+      return {
+        ...state,
+        messages: deduped,
+        activeRoomId: action.payload.roomId || state.activeRoomId,
+        roomContinuationById: {
+          ...state.roomContinuationById,
+          ...(action.payload.roomId
+            ? { [action.payload.roomId]: action.payload.continuation || null }
+            : {})
+        }
+      };
+    }
     case CHAT_ACTIONS.SYSTEM_MESSAGE_RECEIVED:
       return {
         ...state,

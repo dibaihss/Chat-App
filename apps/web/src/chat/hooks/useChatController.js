@@ -4,7 +4,10 @@ import { CHAT_ACTIONS, chatReducer, initialChatState } from "../state/chatReduce
 import { buildActiveThread, buildConversations, getConnectingText } from "../state/selectors";
 
 export function useChatController() {
+  const apiBaseUrl = process.env.NEXT_PUBLIC_CHAT_API_URL || "http://localhost:3001";
   const [state, dispatch] = useReducer(chatReducer, initialChatState);
+  const createIdempotencyKey = () =>
+    globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   const socketRef = useRef(null);
   const messageAreaRef = useRef(null);
@@ -21,7 +24,7 @@ export function useChatController() {
   }, [state.activeChat]);
 
   useEffect(() => {
-    const socket = io({ autoConnect: false });
+    const socket = io(apiBaseUrl, { autoConnect: false });
     socketRef.current = socket;
 
     socket.on("private_message", (message) => {
@@ -46,12 +49,19 @@ export function useChatController() {
       dispatch({ type: CHAT_ACTIONS.USERS_ONLINE_UPDATED, payload: users });
     });
 
+    socket.on("room_message", (message) => {
+      dispatch({
+        type: CHAT_ACTIONS.MESSAGE_RECEIVED,
+        payload: { ...message, type: "CHAT" }
+      });
+    });
+
     socket.on("connect_error", () => {
       dispatch({ type: CHAT_ACTIONS.CONNECT_ERROR, payload: "Could not connect to server." });
     });
 
     return () => socket.disconnect();
-  }, []);
+  }, [apiBaseUrl]);
 
   useEffect(() => {
     const area = messageAreaRef.current;
@@ -67,8 +77,8 @@ export function useChatController() {
   );
 
   const activeThread = useMemo(
-    () => buildActiveThread(state.messages, state.activeChat, state.username),
-    [state.messages, state.activeChat, state.username]
+    () => buildActiveThread(state.messages, state.activeRoomId),
+    [state.messages, state.activeRoomId]
   );
 
   const connectingText = useMemo(
@@ -106,6 +116,33 @@ export function useChatController() {
     });
   };
 
+  const loadRoomHistoryPage = async (roomId, continuation) => {
+    const query = new URLSearchParams({ limit: "50" });
+    if (continuation) {
+      query.set("continuation", continuation);
+    }
+
+    const response = await fetch(`${apiBaseUrl}/rooms/${encodeURIComponent(roomId)}/messages?${query}`, {
+      headers: {
+        "x-user-id": state.username
+      }
+    });
+
+    const result = await response.json();
+    if (!response.ok || !result?.ok) {
+      throw new Error(result?.error || "Failed to load room history.");
+    }
+
+    dispatch({
+      type: CHAT_ACTIONS.HISTORY_LOADED,
+      payload: {
+        roomId,
+        messages: result.messages || [],
+        continuation: result.continuation || null
+      }
+    });
+  };
+
   const sendMessage = (event) => {
     event.preventDefault();
     const content = state.messageInput.trim();
@@ -117,7 +154,7 @@ export function useChatController() {
     }
 
     dispatch({ type: CHAT_ACTIONS.CLEAR_ERROR });
-    socket.emit("private_message", { to, content }, (result) => {
+    socket.emit("private_message", { to, content, idempotencyKey: createIdempotencyKey() }, (result) => {
       if (!result?.ok) {
         dispatch({
           type: CHAT_ACTIONS.SEND_ERROR,
@@ -135,7 +172,7 @@ export function useChatController() {
 
     socketRef.current.emit(
       "private_message",
-      { to: state.activeChat, content: `[File] ${file.name}` },
+      { to: state.activeChat, content: `[File] ${file.name}`, idempotencyKey: createIdempotencyKey() },
       (result) => {
         if (!result?.ok) {
           dispatch({
@@ -148,8 +185,47 @@ export function useChatController() {
   };
 
   const openConversation = (user) => {
-    dispatch({ type: CHAT_ACTIONS.SET_ACTIVE_CHAT, payload: user });
-    dispatch({ type: CHAT_ACTIONS.UNREAD_RESET, payload: user });
+    const socket = socketRef.current;
+    if (!socket || !socket.connected) {
+      return;
+    }
+
+    socket.emit("open_room", { peerUser: user }, async (result) => {
+      if (!result?.ok) {
+        dispatch({
+          type: CHAT_ACTIONS.SEND_ERROR,
+          payload: result?.error || "Failed to open room."
+        });
+        return;
+      }
+
+      dispatch({
+        type: CHAT_ACTIONS.SET_ACTIVE_CHAT,
+        payload: user,
+        roomId: result.roomId
+      });
+      dispatch({ type: CHAT_ACTIONS.UNREAD_RESET, payload: user });
+
+      dispatch({
+        type: CHAT_ACTIONS.HISTORY_LOADED,
+        payload: {
+          roomId: result.roomId,
+          messages: result.messages || [],
+          continuation: result.continuation || null
+        }
+      });
+
+      if (result.continuation) {
+        try {
+          await loadRoomHistoryPage(result.roomId, result.continuation);
+        } catch (error) {
+          dispatch({
+            type: CHAT_ACTIONS.SEND_ERROR,
+            payload: error.message || "Failed to load extra history."
+          });
+        }
+      }
+    });
   };
 
   const setUsernameInput = (value) => {
@@ -194,6 +270,7 @@ export function useChatController() {
     sendMessage,
     sendFileAsMessage,
     openConversation,
+    loadRoomHistoryPage,
     setUsernameInput,
     setActiveNav,
     setSearchTerm,
