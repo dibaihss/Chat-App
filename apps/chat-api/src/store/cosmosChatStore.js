@@ -45,41 +45,45 @@ class CosmosChatStore {
       key,
       consistencyLevel: "Session"
     });
+
+    // Temporary in-memory fallback for room metadata/memberships when not persisted in Cosmos.
+    this.rooms = new Map();
+    this.membershipsByRoom = new Map();
   }
 
-  // async init() {
-  //   const { database } = await this.client.databases.createIfNotExists({ id: this.databaseId });
-  //   this.database = database;
+  async init() {
+    const { database } = await this.client.databases.createIfNotExists({ id: this.databaseId });
+    this.database = database;
 
-  //   const ttl = parseIntOrDefault(process.env.COSMOS_EPHEMERAL_TTL_SECONDS, null);
+    const ttl = parseIntOrDefault(process.env.COSMOS_EPHEMERAL_TTL_SECONDS, null);
 
-  //   const { container: messages } = await database.containers.createIfNotExists({
-  //     id: this.containerIds.messages,
-  //     partitionKey: { paths: ["/conversationId"] },
-  //     indexingPolicy: {
-  //       indexingMode: "consistent",
-  //       includedPaths: [{ path: "/*" }]
-  //     }
-  //   });
+    const { container: messages } = await database.containers.createIfNotExists({
+      id: this.containerIds.messages,
+      partitionKey: { paths: ["/conversationId"] },
+      indexingPolicy: {
+        indexingMode: "consistent",
+        includedPaths: [{ path: "/*" }]
+      }
+    });
 
-  //   const { container: users } = await database.containers.createIfNotExists({
-  //     id: this.containerIds.users,
-  //     partitionKey: { paths: ["/userId"] }
-  //   });
+    const { container: users } = await database.containers.createIfNotExists({
+      id: this.containerIds.users,
+      partitionKey: { paths: ["/userId"] }
+    });
 
-  //   const { container: rooms } = await database.containers.createIfNotExists({
-  //     id: this.containerIds.rooms,
-  //     partitionKey: { paths: ["/roomId"] }
-  //   });
+    // const { container: rooms } = await database.containers.createIfNotExists({
+    //   id: this.containerIds.rooms,
+    //   partitionKey: { paths: ["/roomId"] }
+    // });
 
-  //   const { container: memberships } = await database.containers.createIfNotExists({
-  //     id: this.containerIds.memberships,
-  //     partitionKey: { paths: ["/roomId"] }
-  //   });
+    // const { container: memberships } = await database.containers.createIfNotExists({
+    //   id: this.containerIds.memberships,
+    //   partitionKey: { paths: ["/roomId"] }
+    // });
 
-  //   this.containers = { messages, users, rooms, memberships };
-  //   this.ephemeralTtl = ttl;
-  // }
+    this.containers = { messages, users };
+    this.ephemeralTtl = ttl;
+  }
 
   async upsertUserProfile(userId) {
     const now = new Date().toISOString();
@@ -121,78 +125,54 @@ class CosmosChatStore {
   }
 
   async ensureRoom({ roomId, createdBy, isPrivate = false, name = "" }) {
-    const now = new Date().toISOString();
-    const doc = {
+    const existing = this.rooms.get(roomId);
+    if (existing) {
+      return existing;
+    }
+
+    const room = {
       id: roomId,
       roomId,
       name: name || roomId,
       createdBy,
-      createdAt: now,
+      createdAt: new Date().toISOString(),
       isPrivate: Boolean(isPrivate)
     };
-
-    try {
-      const response = await this.containers.rooms.item(roomId, roomId).read();
-      if (response.resource) {
-        return response.resource;
-      }
-    } catch (error) {
-      if (error.code !== 404) {
-        throw error;
-      }
-    }
-
-    await this.containers.rooms.items.upsert(doc);
-    return doc;
+    this.rooms.set(roomId, room);
+    return room;
   }
 
   async addRoomMember(roomId, userId, role = "member") {
+    const roomMembers = this.membershipsByRoom.get(roomId) || new Map();
     const membershipId = buildMembershipId(roomId, userId);
-    const doc = {
+    const existing = roomMembers.get(membershipId);
+    if (existing) {
+      return existing;
+    }
+
+    const membership = {
       id: membershipId,
       roomId,
       userId,
       role,
       joinedAt: new Date().toISOString()
     };
-
-    try {
-      const response = await this.containers.memberships.item(membershipId, roomId).read();
-      if (response.resource) {
-        return response.resource;
-      }
-    } catch (error) {
-      if (error.code !== 404) {
-        throw error;
-      }
-    }
-
-    await this.containers.memberships.items.upsert(doc);
-    return doc;
+    roomMembers.set(membershipId, membership);
+    this.membershipsByRoom.set(roomId, roomMembers);
+    return membership;
   }
 
   async getRoomMembers(roomId) {
-    const query = {
-      query: "SELECT c.id, c.roomId, c.userId, c.role, c.joinedAt FROM c WHERE c.roomId = @roomId",
-      parameters: [{ name: "@roomId", value: roomId }]
-    };
-    const { resources } = await this.containers.memberships.items
-      .query(query, { partitionKey: roomId })
-      .fetchAll();
-    return resources;
+    const roomMembers = this.membershipsByRoom.get(roomId);
+    return roomMembers ? Array.from(roomMembers.values()) : [];
   }
 
   async isRoomMember(roomId, userId) {
-    const membershipId = buildMembershipId(roomId, userId);
-    try {
-      const response = await this.containers.memberships.item(membershipId, roomId).read();
-      return Boolean(response.resource);
-    } catch (error) {
-      if (error.code === 404) {
-        return false;
-      }
-      throw error;
+    const roomMembers = this.membershipsByRoom.get(roomId);
+    if (!roomMembers) {
+      return false;
     }
+    return roomMembers.has(buildMembershipId(roomId, userId));
   }
 
   async saveMessage({

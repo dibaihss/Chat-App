@@ -64,7 +64,7 @@ function requireUser(req, res, next) {
 }
 
 async function main() {
-  // await store.init();
+  await store.init();
 
   const app = express();
   app.use(cors({ origin: webOrigin }));
