@@ -64,11 +64,15 @@ function requireUser(req, res, next) {
 }
 
 async function main() {
-  await store.init();
+  // await store.init();
 
   const app = express();
   app.use(cors({ origin: webOrigin }));
   app.use(express.json());
+
+  app.get("/", (_req, res) => {
+    res.json({ ok: true, service: "chat-api", health: "/health" });
+  });
 
   app.get("/health", (_req, res) => {
     res.json({ ok: true });

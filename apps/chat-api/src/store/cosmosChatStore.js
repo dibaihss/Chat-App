@@ -47,39 +47,39 @@ class CosmosChatStore {
     });
   }
 
-  async init() {
-    const { database } = await this.client.databases.createIfNotExists({ id: this.databaseId });
-    this.database = database;
+  // async init() {
+  //   const { database } = await this.client.databases.createIfNotExists({ id: this.databaseId });
+  //   this.database = database;
 
-    const ttl = parseIntOrDefault(process.env.COSMOS_EPHEMERAL_TTL_SECONDS, null);
+  //   const ttl = parseIntOrDefault(process.env.COSMOS_EPHEMERAL_TTL_SECONDS, null);
 
-    const { container: messages } = await database.containers.createIfNotExists({
-      id: this.containerIds.messages,
-      partitionKey: { paths: ["/conversationId"] },
-      indexingPolicy: {
-        indexingMode: "consistent",
-        includedPaths: [{ path: "/*" }]
-      }
-    });
+  //   const { container: messages } = await database.containers.createIfNotExists({
+  //     id: this.containerIds.messages,
+  //     partitionKey: { paths: ["/conversationId"] },
+  //     indexingPolicy: {
+  //       indexingMode: "consistent",
+  //       includedPaths: [{ path: "/*" }]
+  //     }
+  //   });
 
-    const { container: users } = await database.containers.createIfNotExists({
-      id: this.containerIds.users,
-      partitionKey: { paths: ["/userId"] }
-    });
+  //   const { container: users } = await database.containers.createIfNotExists({
+  //     id: this.containerIds.users,
+  //     partitionKey: { paths: ["/userId"] }
+  //   });
 
-    const { container: rooms } = await database.containers.createIfNotExists({
-      id: this.containerIds.rooms,
-      partitionKey: { paths: ["/roomId"] }
-    });
+  //   const { container: rooms } = await database.containers.createIfNotExists({
+  //     id: this.containerIds.rooms,
+  //     partitionKey: { paths: ["/roomId"] }
+  //   });
 
-    const { container: memberships } = await database.containers.createIfNotExists({
-      id: this.containerIds.memberships,
-      partitionKey: { paths: ["/roomId"] }
-    });
+  //   const { container: memberships } = await database.containers.createIfNotExists({
+  //     id: this.containerIds.memberships,
+  //     partitionKey: { paths: ["/roomId"] }
+  //   });
 
-    this.containers = { messages, users, rooms, memberships };
-    this.ephemeralTtl = ttl;
-  }
+  //   this.containers = { messages, users, rooms, memberships };
+  //   this.ephemeralTtl = ttl;
+  // }
 
   async upsertUserProfile(userId) {
     const now = new Date().toISOString();
