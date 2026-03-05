@@ -1,0 +1,18 @@
+{
+  "name": "chat-api",
+  "private": true,
+  "version": "1.0.0",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "node src/server.js",
+    "build": "node -e \"console.log('chat-api: no build step')\"",
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "@azure/cosmos": "4.5.1",
+    "cors": "2.8.5",
+    "dotenv": "16.4.7",
+    "express": "4.21.2",
+    "socket.io": "4.8.1"
+  }
+}

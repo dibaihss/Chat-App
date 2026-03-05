@@ -1,0 +1,6 @@
+{
+  "name": "@chat-app/shared",
+  "private": true,
+  "version": "1.0.0",
+  "main": "src/chatTypes.js"
+}

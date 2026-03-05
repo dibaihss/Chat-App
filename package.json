@@ -1,17 +1,17 @@
 {
-  "name": "chat-app-nextjs",
+  "name": "chat-app-monorepo",
   "private": true,
   "version": "1.0.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "node server.js",
-    "build": "next build",
-    "start": "node server.js --prod"
-  },
-  "dependencies": {
-    "next": "14.2.5",
-    "react": "18.3.1",
-    "react-dom": "18.3.1",
-    "socket.io": "4.8.1",
-    "socket.io-client": "4.8.1"
+    "dev": "node scripts/dev.js",
+    "dev:web": "npm run dev -w apps/web",
+    "dev:api": "npm run dev -w apps/chat-api",
+    "build": "npm run build -w apps/web && npm run build -w apps/chat-api",
+    "start:web": "npm run start -w apps/web",
+    "start:api": "npm run start -w apps/chat-api"
   }
 }

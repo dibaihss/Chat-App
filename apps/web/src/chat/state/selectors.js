@@ -29,8 +29,8 @@ export function buildConversations(messages, usersOnline, username, searchTerm) 
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 
-export function buildActiveThread(messages, activeChat, username) {
-  if (!activeChat) {
+export function buildActiveThread(messages, activeRoomId) {
+  if (!activeRoomId) {
     return [];
   }
 
@@ -39,11 +39,7 @@ export function buildActiveThread(messages, activeChat, username) {
       return true;
     }
 
-    return (
-      msg.type === "CHAT" &&
-      ((msg.sender === username && msg.to === activeChat) ||
-        (msg.sender === activeChat && msg.to === username))
-    );
+    return msg.type === "CHAT" && msg.conversationId === activeRoomId;
   });
 }
 
