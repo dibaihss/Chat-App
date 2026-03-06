@@ -12,6 +12,7 @@ export default function AppShell({ controller }) {
     <div className="app-shell">
       <LeftSidebar
         username={state.username}
+        onSignOut={controller.signOut}
         activeNav={state.activeNav}
         onActiveNavChange={controller.setActiveNav}
         getAvatarColor={getAvatarColor}
@@ -23,7 +24,7 @@ export default function AppShell({ controller }) {
         conversations={conversations}
         activeChat={state.activeChat}
         onOpenConversation={controller.openConversation}
-        unreadByUser={state.unreadByUser}
+        unreadByUserId={state.unreadByUserId}
         getAvatarColor={getAvatarColor}
         formatTime={formatTime}
       />
@@ -40,7 +41,7 @@ export default function AppShell({ controller }) {
 
         <MessageThread
           activeThread={activeThread}
-          username={state.username}
+          userId={state.userId}
           messageAreaRef={controller.messageAreaRef}
           formatTime={formatTime}
         />

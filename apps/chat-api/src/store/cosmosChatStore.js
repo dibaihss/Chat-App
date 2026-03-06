@@ -85,12 +85,12 @@ class CosmosChatStore {
     this.ephemeralTtl = ttl;
   }
 
-  async upsertUserProfile(userId) {
+  async upsertUserProfile(userId, displayName = "") {
     const now = new Date().toISOString();
     const doc = {
       id: userId,
       userId,
-      displayName: userId,
+      displayName: displayName || userId,
       avatar: "",
       createdAt: now,
       lastSeenAt: now
@@ -101,6 +101,7 @@ class CosmosChatStore {
       if (existing.resource) {
         doc.createdAt = existing.resource.createdAt || now;
         doc.avatar = existing.resource.avatar || "";
+        doc.displayName = displayName || existing.resource.displayName || userId;
       }
     } catch (error) {
       if (error.code !== 404) {

@@ -1,6 +1,6 @@
 export default function MessageThread({
   activeThread,
-  username,
+  userId,
   messageAreaRef,
   formatTime
 }) {
@@ -15,10 +15,10 @@ export default function MessageThread({
           );
         }
 
-        const isSender = message.sender === username;
+        const isSender = message.senderId === userId;
         return (
           <li
-            key={`${message.sender}-${index}-${message.content}`}
+            key={`${message.senderId}-${index}-${message.content}`}
             className={`message-row ${isSender ? "sender" : "receiver"}`}
           >
             <div className="message-bubble">

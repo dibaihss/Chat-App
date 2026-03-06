@@ -16,9 +16,7 @@ export default function Home() {
 
       {!state.username ? (
         <LoginScreen
-          usernameInput={state.usernameInput}
-          onUsernameInputChange={controller.setUsernameInput}
-          onSubmit={controller.connect}
+          onSignIn={controller.signIn}
           connectingText={connectingText}
           errorText={state.errorText}
         />
