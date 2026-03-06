@@ -3,11 +3,14 @@ const jwksClient = require("jwks-rsa");
 
 function buildVerifierConfig() {
   const tenantId = process.env.ENTRA_TENANT_ID || "";
-  const issuer =
-    process.env.ENTRA_ISSUER ||
-    (tenantId
-      ? `https://login.microsoftonline.com/${tenantId}/v2.0`
-      : "");
+  const explicitIssuer = process.env.ENTRA_ISSUER || "";
+  const defaultIssuers = tenantId
+    ? [
+        `https://login.microsoftonline.com/${tenantId}/v2.0`,
+        `https://sts.windows.net/${tenantId}/`
+      ]
+    : [];
+  const issuers = explicitIssuer ? [explicitIssuer] : defaultIssuers;
   const audience = process.env.ENTRA_AUDIENCE || "";
   const jwksUri =
     process.env.ENTRA_JWKS_URI ||
@@ -15,7 +18,7 @@ function buildVerifierConfig() {
       ? `https://login.microsoftonline.com/${tenantId}/discovery/v2.0/keys`
       : "");
 
-  return { tenantId, issuer, audience, jwksUri };
+  return { tenantId, issuers, audience, jwksUri };
 }
 
 const verifierConfig = buildVerifierConfig();
@@ -49,8 +52,8 @@ function normalizeClaims(claims) {
 }
 
 function verifyAccessToken(token) {
-  if (!verifierConfig.tenantId || !verifierConfig.audience || !verifierConfig.issuer) {
-    throw new Error("Entra validation not configured. Set ENTRA_TENANT_ID, ENTRA_ISSUER, ENTRA_AUDIENCE.");
+  if (!verifierConfig.tenantId || !verifierConfig.audience || verifierConfig.issuers.length === 0) {
+    throw new Error("Entra validation not configured. Set ENTRA_TENANT_ID and ENTRA_AUDIENCE.");
   }
 
   return new Promise((resolve, reject) => {
@@ -59,7 +62,7 @@ function verifyAccessToken(token) {
       getSigningKey,
       {
         algorithms: ["RS256"],
-        issuer: verifierConfig.issuer,
+        issuer: verifierConfig.issuers,
         audience: verifierConfig.audience
       },
       (err, decoded) => {

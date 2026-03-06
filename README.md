@@ -1,93 +1,149 @@
-# Chat App Monorepo (Next.js + Socket.IO + Cosmos DB + Entra ID)
+# Chat App Monorepo
 
-This repository now uses a single repo with separated apps:
+Next.js frontend + Socket.IO/Express backend + Cosmos DB + Azure Entra ID auth.
 
-- `apps/web`: Next.js frontend
-- `apps/chat-api`: REST + Socket.IO backend
-- `packages/shared`: shared chat helpers/contracts
+## Project structure
 
-Cosmos DB is the source of truth for:
+- `apps/web`: Next.js UI
+- `apps/chat-api`: Express REST + Socket.IO realtime server
+- `packages/shared`: shared helpers
 
-- message history (`messages` container)
-- user profiles (`users`)
-- room metadata (`rooms`)
-- room memberships (`room_memberships`)
+## Prerequisites
 
-## Setup
+- Node.js 20+ (or current LTS)
+- Azure Entra tenant
+- Azure Cosmos DB account
 
-1. Install dependencies from repo root:
+## 1) Install dependencies
+
+From repo root:
 
 ```bash
 npm install
 ```
 
-2. Copy environment examples:
+## 2) Create env files
+
+From repo root:
 
 ```bash
 copy .env.example .env
-copy apps\\chat-api\\.env.example apps\\chat-api\\.env
 copy apps\\web\\.env.example apps\\web\\.env.local
+copy apps\\chat-api\\.env.example apps\\chat-api\\.env
 ```
 
-3. Fill Cosmos credentials and Entra values in `apps/chat-api/.env`.
-4. Fill Entra frontend values in `apps/web/.env.local`.
+## 3) Azure Entra setup (required)
 
-## Azure Entra ID setup
+Create **two** app registrations.
 
-Create two app registrations:
+### A. SPA app registration (frontend)
 
-1. Web app registration (SPA):
-- Add redirect URI: `http://localhost:3000`
-- Use this as `NEXT_PUBLIC_ENTRA_CLIENT_ID`
+- Platform: `Single-page application`
+- Redirect URI: `http://localhost:3000`
+- Copy `Application (client) ID` -> `NEXT_PUBLIC_ENTRA_CLIENT_ID`
 
-2. API app registration:
-- Expose an API scope (for example: `api://<api-client-id>/Chat.Access`)
-- Use API audience in backend `ENTRA_AUDIENCE` (`api://<api-client-id>` or configured audience)
+### B. API app registration (backend resource)
 
-Required frontend env (`apps/web/.env.local`):
-- `NEXT_PUBLIC_ENTRA_CLIENT_ID`
-- `NEXT_PUBLIC_ENTRA_TENANT_ID`
-- `NEXT_PUBLIC_ENTRA_AUTHORITY`
-- `NEXT_PUBLIC_CHAT_API_SCOPE`
-- `NEXT_PUBLIC_CHAT_API_URL`
+- Go to `Expose an API`
+- Set `Application ID URI` (example: `api://<API_APP_CLIENT_ID>`)
+- Create delegated scope: `Chat.Access`
+- Full scope value example: `api://<API_APP_CLIENT_ID>/Chat.Access`
 
-Required backend env (`apps/chat-api/.env`):
-- `AUTH_MODE=entra`
-- `ENTRA_TENANT_ID`
-- `ENTRA_ISSUER`
-- `ENTRA_AUDIENCE`
-- `ENTRA_JWKS_URI`
+### C. Grant SPA permission to API scope
 
-## Run
+- Open SPA app -> `API permissions` -> `Add a permission` -> `My APIs`
+- Select API app -> `Delegated permissions` -> check `Chat.Access`
+- Grant/admin consent
 
-Start both apps:
+## 4) Configure environment variables
+
+### `apps/web/.env.local`
+
+```env
+NEXT_PUBLIC_CHAT_API_URL=http://localhost:3001
+NEXT_PUBLIC_ENTRA_CLIENT_ID=<SPA_APP_CLIENT_ID>
+NEXT_PUBLIC_ENTRA_TENANT_ID=<TENANT_ID>
+NEXT_PUBLIC_ENTRA_AUTHORITY=https://login.microsoftonline.com/<TENANT_ID>
+NEXT_PUBLIC_ENTRA_REDIRECT_URI=http://localhost:3000
+NEXT_PUBLIC_CHAT_API_SCOPE=api://<API_APP_CLIENT_ID>/Chat.Access
+```
+
+### `apps/chat-api/.env`
+
+```env
+CHAT_API_PORT=3001
+WEB_ORIGIN=http://localhost:3000
+AUTH_MODE=entra
+
+ENTRA_TENANT_ID=<TENANT_ID>
+ENTRA_AUDIENCE=api://<API_APP_CLIENT_ID>
+
+# Optional overrides:
+# ENTRA_ISSUER=https://login.microsoftonline.com/<TENANT_ID>/v2.0
+# ENTRA_JWKS_URI=https://login.microsoftonline.com/<TENANT_ID>/discovery/v2.0/keys
+
+COSMOS_CONNECTION_STRING=AccountEndpoint=...;AccountKey=...;
+COSMOS_DATABASE_ID=chat_app
+COSMOS_MESSAGES_CONTAINER_ID=messages
+COSMOS_USERS_CONTAINER_ID=users
+```
+
+Notes:
+- Backend validator accepts both Entra v2 issuer (`login.microsoftonline.com/.../v2.0`) and Entra v1 issuer (`sts.windows.net/.../`).
+- If Entra auth is not ready yet, set `AUTH_MODE=legacy` for local non-auth mode.
+
+## 5) Run
+
+From repo root:
 
 ```bash
 npm run dev
 ```
 
-Or run separately:
+Or separately:
 
 ```bash
 npm run dev:web
 npm run dev:api
 ```
 
-Default URLs:
-
+URLs:
 - Web: `http://localhost:3000`
-- Chat API: `http://localhost:3001`
+- API: `http://localhost:3001`
+- Health: `http://localhost:3001/health`
 
-## Backend interfaces
+## Expected login/data flow
 
-- `GET /users/:userId` (Bearer token required)
-- `GET /rooms/:roomId/messages?limit=50&continuation=...` (Bearer token required)
-- `GET /rooms/:roomId/members` (Bearer token required)
-- `POST /rooms/:roomId/members` (Bearer token required)
+1. User signs in via Microsoft on web app.
+2. Web acquires access token for `NEXT_PUBLIC_CHAT_API_SCOPE`.
+3. Web calls `POST /auth/sync-user` with Bearer token.
+4. API validates token and upserts user into Cosmos `users` container.
+5. Web opens Socket.IO connection with token in handshake auth.
 
-Socket events:
+## API routes
 
-- `register` (token-authenticated socket only)
-- `open_room` (returns message history)
-- `private_message` (persist then emit)
-- `room_message` (persist then emit)
+- `GET /` public
+- `GET /health` public
+- `POST /auth/sync-user` authenticated
+- `GET /users/:userId` authenticated
+- `GET /rooms/:roomId/messages` authenticated
+- `GET /rooms/:roomId/members` authenticated
+- `POST /rooms/:roomId/members` authenticated
+
+## Troubleshooting
+
+- `401 Unauthorized` on `/auth/sync-user`:
+  - Check `ENTRA_AUDIENCE` exactly matches token `aud`
+  - Check `NEXT_PUBLIC_CHAT_API_SCOPE` exactly matches exposed scope
+  - Confirm SPA app has delegated permission + consent for `Chat.Access`
+- `GET /Redirect 404`:
+  - Use `NEXT_PUBLIC_ENTRA_REDIRECT_URI=http://localhost:3000` (or create a real `/Redirect` page)
+- User not added to Cosmos:
+  - Verify `/auth/sync-user` returns `200`
+  - Verify Cosmos DB/containers and credentials in `apps/chat-api/.env`
+- Port in use:
+  - Kill process on `3000`/`3001` before restart
+
+## Security note
+
+Never commit real secrets (`COSMOS_KEY`, connection strings, tokens). If leaked, rotate keys immediately.
