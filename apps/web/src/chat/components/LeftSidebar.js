@@ -1,4 +1,10 @@
-export default function LeftSidebar({ username, activeNav, onActiveNavChange, getAvatarColor }) {
+export default function LeftSidebar({
+  username,
+  activeNav,
+  onActiveNavChange,
+  getAvatarColor,
+  onSignOut
+}) {
   return (
     <aside className="left-sidebar">
       <div className="app-logo">RT</div>
@@ -41,6 +47,9 @@ export default function LeftSidebar({ username, activeNav, onActiveNavChange, ge
           <div className="profile-status">Online</div>
         </div>
       </div>
+      <button type="button" className="nav-icon-btn" onClick={onSignOut}>
+        Sign out
+      </button>
     </aside>
   );
 }

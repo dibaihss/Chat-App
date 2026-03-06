@@ -1,23 +1,37 @@
-export function buildConversations(messages, usersOnline, username, searchTerm) {
+export function buildConversations(messages, usersOnline, currentUserId, searchTerm) {
   const ownChats = messages.filter(
-    (msg) => msg.type === "CHAT" && (msg.sender === username || msg.to === username)
+    (msg) =>
+      msg.type === "CHAT" &&
+      (msg.senderId === currentUserId || msg.toUserId === currentUserId)
   );
   const byUser = new Map();
 
   ownChats.forEach((msg) => {
-    const otherUser = msg.sender === username ? msg.to : msg.sender;
-    const existing = byUser.get(otherUser);
+    const otherUserId = msg.senderId === currentUserId ? msg.toUserId : msg.senderId;
+    const otherDisplayName =
+      msg.senderId === currentUserId ? (msg.toDisplayName || otherUserId) : msg.senderDisplayName;
+    if (!otherUserId) {
+      return;
+    }
+
+    const existing = byUser.get(otherUserId);
     if (!existing || new Date(msg.createdAt) > new Date(existing.createdAt)) {
-      byUser.set(otherUser, { user: otherUser, lastMessage: msg.content, createdAt: msg.createdAt });
+      byUser.set(otherUserId, {
+        userId: otherUserId,
+        displayName: otherDisplayName || otherUserId,
+        lastMessage: msg.content,
+        createdAt: msg.createdAt
+      });
     }
   });
 
   usersOnline
-    .filter((user) => user !== username)
+    .filter((user) => user.userId !== currentUserId)
     .forEach((user) => {
-      if (!byUser.has(user)) {
-        byUser.set(user, {
-          user,
+      if (!byUser.has(user.userId)) {
+        byUser.set(user.userId, {
+          userId: user.userId,
+          displayName: user.displayName || user.userId,
           lastMessage: "No messages yet",
           createdAt: new Date(0).toISOString()
         });
@@ -25,7 +39,7 @@ export function buildConversations(messages, usersOnline, username, searchTerm) 
     });
 
   return Array.from(byUser.values())
-    .filter((entry) => entry.user.toLowerCase().includes(searchTerm.toLowerCase()))
+    .filter((entry) => entry.displayName.toLowerCase().includes(searchTerm.toLowerCase()))
     .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
 

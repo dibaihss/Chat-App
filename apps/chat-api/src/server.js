@@ -8,9 +8,11 @@ const cors = require("cors");
 const { Server } = require("socket.io");
 const { CosmosChatStore } = require("./store/cosmosChatStore");
 const { buildPrivateConversationId } = require("../../../packages/shared/src/chatTypes");
+const { authenticateExpress, authenticateSocket } = require("./auth/entraAuth");
 
 const port = Number.parseInt(process.env.CHAT_API_PORT || "3001", 10);
 const webOrigin = process.env.WEB_ORIGIN || "http://localhost:3000";
+const authMode = String(process.env.AUTH_MODE || "entra").toLowerCase();
 
 const store = new CosmosChatStore({
   connectionString: process.env.COSMOS_CONNECTION_STRING,
@@ -23,14 +25,16 @@ const store = new CosmosChatStore({
   membershipsContainerId: process.env.COSMOS_MEMBERSHIPS_CONTAINER_ID || "room_memberships"
 });
 
-const usersByName = new Map();
+const usersById = new Map();
 const usersBySocketId = new Map();
 
 function toClientMessage(record) {
   return {
     id: record.id,
-    sender: record.senderId,
-    to: record.to || "",
+    senderId: record.senderId,
+    senderDisplayName: record.senderDisplayName || record.senderId,
+    toUserId: record.to || "",
+    toDisplayName: record.toDisplayName || "",
     content: record.content,
     type: "CHAT",
     conversationId: record.conversationId,
@@ -39,27 +43,40 @@ function toClientMessage(record) {
   };
 }
 
-async function ensurePrivateConversation(userA, userB) {
-  const roomId = buildPrivateConversationId(userA, userB);
+async function ensurePrivateConversation(userAId, userBId) {
+  const roomId = buildPrivateConversationId(userAId, userBId);
   await store.ensureRoom({
     roomId,
-    createdBy: userA,
+    createdBy: userAId,
     isPrivate: true,
     name: roomId
   });
-  await store.addRoomMember(roomId, userA, "member");
-  await store.addRoomMember(roomId, userB, "member");
+  await store.addRoomMember(roomId, userAId, "member");
+  await store.addRoomMember(roomId, userBId, "member");
   return roomId;
 }
 
+function getUserFromRequest(req) {
+  if (authMode === "legacy") {
+    const userId = String(req.header("x-user-id") || "").trim();
+    if (!userId) {
+      return null;
+    }
+    return {
+      oid: userId,
+      name: userId
+    };
+  }
+  return req.auth || null;
+}
+
 function requireUser(req, res, next) {
-  const userId = String(req.header("x-user-id") || "").trim();
-  if (!userId) {
-    res.status(401).json({ ok: false, error: "Missing x-user-id header." });
+  const user = getUserFromRequest(req);
+  if (!user) {
+    res.status(401).json({ ok: false, error: "Missing authenticated user." });
     return;
   }
-
-  req.userId = userId;
+  req.user = user;
   next();
 }
 
@@ -71,12 +88,16 @@ async function main() {
   app.use(express.json());
 
   app.get("/", (_req, res) => {
-    res.json({ ok: true, service: "chat-api", health: "/health" });
+    res.json({ ok: true, service: "chat-api", authMode, health: "/health" });
   });
 
   app.get("/health", (_req, res) => {
-    res.json({ ok: true });
+    res.json({ ok: true, authMode });
   });
+
+  if (authMode !== "legacy") {
+    app.use(authenticateExpress);
+  }
 
   app.get("/users/:userId", requireUser, async (req, res) => {
     const profile = await store.getUserProfile(req.params.userId);
@@ -87,9 +108,21 @@ async function main() {
     res.json({ ok: true, user: profile });
   });
 
+  app.post("/auth/sync-user", requireUser, async (req, res) => {
+    try {
+      const userId = req.user.oid;
+      const displayName = req.user.name || req.user.preferredUsername || userId;
+      const user = await store.upsertUserProfile(userId, displayName);
+      res.json({ ok: true, user });
+    } catch (_error) {
+      res.status(500).json({ ok: false, error: "Failed to sync user profile." });
+    }
+  });
+
   app.get("/rooms/:roomId/messages", requireUser, async (req, res) => {
     const roomId = String(req.params.roomId || "").trim();
-    const isMember = await store.isRoomMember(roomId, req.userId);
+    const userId = req.user.oid;
+    const isMember = await store.isRoomMember(roomId, userId);
     if (!isMember) {
       res.status(403).json({ ok: false, error: "You are not a member of this room." });
       return;
@@ -103,7 +136,8 @@ async function main() {
 
   app.get("/rooms/:roomId/members", requireUser, async (req, res) => {
     const roomId = String(req.params.roomId || "").trim();
-    const isMember = await store.isRoomMember(roomId, req.userId);
+    const userId = req.user.oid;
+    const isMember = await store.isRoomMember(roomId, userId);
     if (!isMember) {
       res.status(403).json({ ok: false, error: "You are not a member of this room." });
       return;
@@ -122,7 +156,7 @@ async function main() {
       return;
     }
 
-    const requesterIsMember = await store.isRoomMember(roomId, req.userId);
+    const requesterIsMember = await store.isRoomMember(roomId, req.user.oid);
     if (!requesterIsMember) {
       res.status(403).json({ ok: false, error: "You are not a member of this room." });
       return;
@@ -137,39 +171,56 @@ async function main() {
     cors: { origin: webOrigin }
   });
 
+  if (authMode !== "legacy") {
+    io.use(authenticateSocket);
+  }
+
   const broadcastUsers = () => {
-    io.emit("users_online", Array.from(usersByName.keys()));
+    io.emit(
+      "users_online",
+      Array.from(usersById.values()).map((u) => ({
+        userId: u.userId,
+        displayName: u.displayName
+      }))
+    );
   };
 
   io.on("connection", (socket) => {
-    socket.on("register", async (rawUsername, ack) => {
+    socket.on("register", async (_rawUsername, ack) => {
       try {
-        const username = String(rawUsername || "").trim();
-        if (!username) {
-          ack?.({ ok: false, error: "Username is required." });
+        const auth = authMode === "legacy"
+          ? { oid: String(_rawUsername || "").trim(), name: String(_rawUsername || "").trim() }
+          : socket.data.auth;
+        const userId = String(auth?.oid || "").trim();
+        const displayName = String(auth?.name || auth?.preferredUsername || userId).trim();
+
+        if (!userId) {
+          ack?.({ ok: false, error: "Authenticated user is required." });
           return;
         }
 
-        if (usersByName.has(username)) {
-          ack?.({ ok: false, error: "Username is already in use." });
-          return;
-        }
+        await store.upsertUserProfile(userId, displayName);
 
-        await store.upsertUserProfile(username);
-        usersByName.set(username, socket.id);
-        usersBySocketId.set(socket.id, username);
+        usersById.set(userId, { userId, displayName, socketId: socket.id });
+        usersBySocketId.set(socket.id, userId);
 
-        ack?.({ ok: true, username });
-        socket.broadcast.emit("system_message", `${username} joined`);
+        ack?.({
+          ok: true,
+          username: displayName,
+          userId,
+          displayName
+        });
+
+        socket.broadcast.emit("system_message", `${displayName} joined`);
         broadcastUsers();
-      } catch (error) {
+      } catch (_error) {
         ack?.({ ok: false, error: "Failed to register user." });
       }
     });
 
     socket.on("open_room", async (payload, ack) => {
-      const requester = usersBySocketId.get(socket.id);
-      if (!requester) {
+      const requesterId = usersBySocketId.get(socket.id);
+      if (!requesterId) {
         ack?.({ ok: false, error: "You must register first." });
         return;
       }
@@ -177,14 +228,14 @@ async function main() {
       try {
         let roomId = String(payload?.roomId || "").trim();
         if (!roomId) {
-          const peerUser = String(payload?.peerUser || "").trim();
-          if (!peerUser) {
-            ack?.({ ok: false, error: "roomId or peerUser is required." });
+          const peerUserId = String(payload?.peerUserId || payload?.peerUser || "").trim();
+          if (!peerUserId) {
+            ack?.({ ok: false, error: "roomId or peerUserId is required." });
             return;
           }
-          roomId = await ensurePrivateConversation(requester, peerUser);
+          roomId = await ensurePrivateConversation(requesterId, peerUserId);
         } else {
-          const member = await store.isRoomMember(roomId, requester);
+          const member = await store.isRoomMember(roomId, requesterId);
           if (!member) {
             ack?.({ ok: false, error: "You are not a member of this room." });
             return;
@@ -199,57 +250,62 @@ async function main() {
           messages: history.items.map(toClientMessage),
           continuation: history.continuation
         });
-      } catch (error) {
+      } catch (_error) {
         ack?.({ ok: false, error: "Failed to open room." });
       }
     });
 
     socket.on("private_message", async (payload, ack) => {
-      const sender = usersBySocketId.get(socket.id);
-      if (!sender) {
+      const senderId = usersBySocketId.get(socket.id);
+      if (!senderId) {
         ack?.({ ok: false, error: "You must register first." });
         return;
       }
 
-      const to = String(payload?.to || "").trim();
+      const toUserId = String(payload?.toUserId || payload?.to || "").trim();
       const content = String(payload?.content || "").trim();
       const idempotencyKey = String(payload?.idempotencyKey || "").trim() || null;
 
-      if (!to || !content) {
+      if (!toUserId || !content) {
         ack?.({ ok: false, error: "Recipient and message are required." });
         return;
       }
 
-      const targetSocketId = usersByName.get(to);
-      if (!targetSocketId) {
-        ack?.({ ok: false, error: `${to} is offline.` });
+      const target = usersById.get(toUserId);
+      if (!target?.socketId) {
+        ack?.({ ok: false, error: `${toUserId} is offline.` });
         return;
       }
 
       try {
-        const conversationId = await ensurePrivateConversation(sender, to);
+        const conversationId = await ensurePrivateConversation(senderId, toUserId);
+        const senderProfile = usersById.get(senderId);
         const stored = await store.saveMessage({
           conversationId,
-          senderId: sender,
-          to,
+          senderId,
+          to: toUserId,
           content,
           type: "CHAT",
           status: "sent",
           idempotencyKey
         });
-        const message = toClientMessage(stored);
+        const message = toClientMessage({
+          ...stored,
+          senderDisplayName: senderProfile?.displayName || senderId,
+          toDisplayName: target.displayName || toUserId
+        });
 
-        io.to(targetSocketId).emit("private_message", message);
+        io.to(target.socketId).emit("private_message", message);
         socket.emit("private_message", message);
         ack?.({ ok: true, message });
-      } catch (error) {
+      } catch (_error) {
         ack?.({ ok: false, error: "Failed to send message." });
       }
     });
 
     socket.on("room_message", async (payload, ack) => {
-      const sender = usersBySocketId.get(socket.id);
-      if (!sender) {
+      const senderId = usersBySocketId.get(socket.id);
+      if (!senderId) {
         ack?.({ ok: false, error: "You must register first." });
         return;
       }
@@ -262,45 +318,52 @@ async function main() {
         return;
       }
 
-      const member = await store.isRoomMember(roomId, sender);
+      const member = await store.isRoomMember(roomId, senderId);
       if (!member) {
         ack?.({ ok: false, error: "You are not a member of this room." });
         return;
       }
 
       try {
+        const senderProfile = usersById.get(senderId);
         const stored = await store.saveMessage({
           conversationId: roomId,
-          senderId: sender,
+          senderId,
           content,
           type: "CHAT",
           status: "sent",
           idempotencyKey
         });
-        const message = toClientMessage(stored);
+        const message = toClientMessage({
+          ...stored,
+          senderDisplayName: senderProfile?.displayName || senderId
+        });
         io.to(roomId).emit("room_message", message);
         ack?.({ ok: true, message });
-      } catch (error) {
+      } catch (_error) {
         ack?.({ ok: false, error: "Failed to send room message." });
       }
     });
 
     socket.on("disconnect", () => {
-      const username = usersBySocketId.get(socket.id);
-      if (!username) {
+      const userId = usersBySocketId.get(socket.id);
+      if (!userId) {
         return;
       }
 
+      const user = usersById.get(userId);
       usersBySocketId.delete(socket.id);
-      usersByName.delete(username);
-      socket.broadcast.emit("system_message", `${username} left`);
+      usersById.delete(userId);
+      if (user?.displayName) {
+        socket.broadcast.emit("system_message", `${user.displayName} left`);
+      }
       broadcastUsers();
     });
   });
 
   server.listen(port, () => {
     // eslint-disable-next-line no-console
-    console.log(`Chat API ready on http://localhost:${port}`);
+    console.log(`Chat API ready on http://localhost:${port} (auth mode: ${authMode})`);
   });
 }
 
