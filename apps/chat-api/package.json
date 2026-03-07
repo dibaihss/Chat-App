@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@azure/cosmos": "4.5.1",
+    "@azure/identity": "^4.13.0",
+    "@azure/keyvault-secrets": "^4.10.0",
     "cors": "2.8.5",
     "dotenv": "16.4.7",
     "express": "4.21.2",

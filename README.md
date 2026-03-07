@@ -82,6 +82,15 @@ ENTRA_AUDIENCE=api://<API_APP_CLIENT_ID>
 # ENTRA_ISSUER=https://login.microsoftonline.com/<TENANT_ID>/v2.0
 # ENTRA_JWKS_URI=https://login.microsoftonline.com/<TENANT_ID>/discovery/v2.0/keys
 
+# Key Vault (recommended for production)
+KEY_VAULT_ENABLED=false
+KEY_VAULT_URI=https://<vault-name>.vault.azure.net/
+KEY_VAULT_ALLOW_LOCAL_FALLBACK=true
+KEY_VAULT_SECRET_COSMOS_CONNECTION_STRING=chatapi--prod--cosmos-connstr
+# Optional if using endpoint+key instead of connection string:
+# KEY_VAULT_SECRET_COSMOS_ENDPOINT=chatapi--prod--cosmos-endpoint
+# KEY_VAULT_SECRET_COSMOS_KEY=chatapi--prod--cosmos-key
+
 COSMOS_CONNECTION_STRING=AccountEndpoint=...;AccountKey=...;
 COSMOS_DATABASE_ID=chat_app
 COSMOS_MESSAGES_CONTAINER_ID=messages
@@ -91,8 +100,20 @@ COSMOS_USERS_CONTAINER_ID=users
 Notes:
 - Backend validator accepts both Entra v2 issuer (`login.microsoftonline.com/.../v2.0`) and Entra v1 issuer (`sts.windows.net/.../`).
 - If Entra auth is not ready yet, set `AUTH_MODE=legacy` for local non-auth mode.
+- Keep secrets out of `apps/web/.env.local` and all `NEXT_PUBLIC_*` variables.
 
-## 5) Run
+## 5) Production: Azure Key Vault + Managed Identity
+
+1. Enable `System assigned` managed identity on your API host (App Service, Container Apps, or AKS workload identity).
+2. Grant that identity `Key Vault Secrets User` RBAC role on the vault.
+3. Set `KEY_VAULT_ENABLED=true`, `KEY_VAULT_URI`, and secret-name env vars on the API runtime.
+4. Store secret values in Key Vault (for example `chatapi--prod--cosmos-connstr`).
+5. Keep `COSMOS_*` env vars for local development fallback only.
+6. For strict production behavior, set `KEY_VAULT_ALLOW_LOCAL_FALLBACK=false`.
+
+Operational reference: `docs/security/key-vault-runbook.md`.
+
+## 6) Run
 
 From repo root:
 

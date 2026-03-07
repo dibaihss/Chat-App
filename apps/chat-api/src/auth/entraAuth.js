@@ -21,17 +21,32 @@ function buildVerifierConfig() {
   return { tenantId, issuers, audience, jwksUri };
 }
 
-const verifierConfig = buildVerifierConfig();
-const client = jwksClient({
-  jwksUri: verifierConfig.jwksUri,
-  cache: true,
-  cacheMaxEntries: 10,
-  cacheMaxAge: 10 * 60 * 1000,
-  rateLimit: true,
-  jwksRequestsPerMinute: 10
-});
+let verifierContext = null;
+let verifierContextKey = "";
 
-function getSigningKey(header, callback) {
+function getVerifierContext() {
+  const config = buildVerifierConfig();
+  const contextKey = JSON.stringify(config);
+  if (verifierContext && verifierContextKey === contextKey) {
+    return verifierContext;
+  }
+
+  verifierContextKey = contextKey;
+  verifierContext = {
+    config,
+    client: jwksClient({
+      jwksUri: config.jwksUri,
+      cache: true,
+      cacheMaxEntries: 10,
+      cacheMaxAge: 10 * 60 * 1000,
+      rateLimit: true,
+      jwksRequestsPerMinute: 10
+    })
+  };
+  return verifierContext;
+}
+
+function getSigningKey(client, header, callback) {
   client.getSigningKey(header.kid, (err, key) => {
     if (err) {
       callback(err);
@@ -52,6 +67,9 @@ function normalizeClaims(claims) {
 }
 
 function verifyAccessToken(token) {
+  const context = getVerifierContext();
+  const verifierConfig = context.config;
+
   if (!verifierConfig.tenantId || !verifierConfig.audience || verifierConfig.issuers.length === 0) {
     throw new Error("Entra validation not configured. Set ENTRA_TENANT_ID and ENTRA_AUDIENCE.");
   }
@@ -59,7 +77,7 @@ function verifyAccessToken(token) {
   return new Promise((resolve, reject) => {
     jwt.verify(
       token,
-      getSigningKey,
+      (header, callback) => getSigningKey(context.client, header, callback),
       {
         algorithms: ["RS256"],
         issuer: verifierConfig.issuers,
