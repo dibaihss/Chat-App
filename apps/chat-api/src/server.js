@@ -7,23 +7,9 @@ const express = require("express");
 const cors = require("cors");
 const { Server } = require("socket.io");
 const { CosmosChatStore } = require("./store/cosmosChatStore");
+const { loadRuntimeConfig } = require("./config/runtimeConfig");
 const { buildPrivateConversationId } = require("../../../packages/shared/src/chatTypes");
 const { authenticateExpress, authenticateSocket } = require("./auth/entraAuth");
-
-const port = Number.parseInt(process.env.CHAT_API_PORT || "3001", 10);
-const webOrigin = process.env.WEB_ORIGIN || "http://localhost:3000";
-const authMode = String(process.env.AUTH_MODE || "entra").toLowerCase();
-
-const store = new CosmosChatStore({
-  connectionString: process.env.COSMOS_CONNECTION_STRING,
-  endpoint: process.env.COSMOS_ENDPOINT,
-  key: process.env.COSMOS_KEY,
-  databaseId: process.env.COSMOS_DATABASE_ID || "chat_app",
-  messagesContainerId: process.env.COSMOS_MESSAGES_CONTAINER_ID || "messages",
-  usersContainerId: process.env.COSMOS_USERS_CONTAINER_ID || "users",
-  roomsContainerId: process.env.COSMOS_ROOMS_CONTAINER_ID || "rooms",
-  membershipsContainerId: process.env.COSMOS_MEMBERSHIPS_CONTAINER_ID || "room_memberships"
-});
 
 const usersById = new Map();
 const usersBySocketId = new Map();
@@ -43,7 +29,7 @@ function toClientMessage(record) {
   };
 }
 
-async function ensurePrivateConversation(userAId, userBId) {
+async function ensurePrivateConversation(userAId, userBId, store) {
   const roomId = buildPrivateConversationId(userAId, userBId);
   await store.ensureRoom({
     roomId,
@@ -56,7 +42,7 @@ async function ensurePrivateConversation(userAId, userBId) {
   return roomId;
 }
 
-function getUserFromRequest(req) {
+function getUserFromRequest(req, authMode) {
   if (authMode === "legacy") {
     const userId = String(req.header("x-user-id") || "").trim();
     if (!userId) {
@@ -70,17 +56,33 @@ function getUserFromRequest(req) {
   return req.auth || null;
 }
 
-function requireUser(req, res, next) {
-  const user = getUserFromRequest(req);
-  if (!user) {
-    res.status(401).json({ ok: false, error: "Missing authenticated user." });
-    return;
-  }
-  req.user = user;
-  next();
+function createRequireUser(authMode) {
+  return function requireUser(req, res, next) {
+    const user = getUserFromRequest(req, authMode);
+    if (!user) {
+      res.status(401).json({ ok: false, error: "Missing authenticated user." });
+      return;
+    }
+    req.user = user;
+    next();
+  };
 }
 
 async function main() {
+  const runtimeConfig = await loadRuntimeConfig();
+  const { port, webOrigin, authMode } = runtimeConfig;
+  const requireUser = createRequireUser(authMode);
+  const store = new CosmosChatStore({
+    connectionString: runtimeConfig.cosmos.connectionString,
+    endpoint: runtimeConfig.cosmos.endpoint,
+    key: runtimeConfig.cosmos.key,
+    databaseId: runtimeConfig.cosmos.databaseId,
+    messagesContainerId: runtimeConfig.cosmos.messagesContainerId,
+    usersContainerId: runtimeConfig.cosmos.usersContainerId,
+    roomsContainerId: runtimeConfig.cosmos.roomsContainerId,
+    membershipsContainerId: runtimeConfig.cosmos.membershipsContainerId
+  });
+
   await store.init();
 
   const app = express();
@@ -233,7 +235,7 @@ async function main() {
             ack?.({ ok: false, error: "roomId or peerUserId is required." });
             return;
           }
-          roomId = await ensurePrivateConversation(requesterId, peerUserId);
+          roomId = await ensurePrivateConversation(requesterId, peerUserId, store);
         } else {
           const member = await store.isRoomMember(roomId, requesterId);
           if (!member) {
@@ -278,7 +280,7 @@ async function main() {
       }
 
       try {
-        const conversationId = await ensurePrivateConversation(senderId, toUserId);
+        const conversationId = await ensurePrivateConversation(senderId, toUserId, store);
         const senderProfile = usersById.get(senderId);
         const stored = await store.saveMessage({
           conversationId,
@@ -362,8 +364,22 @@ async function main() {
   });
 
   server.listen(port, () => {
+    const keyVaultSource = runtimeConfig.keyVault.enabled
+      ? "azure-key-vault"
+      : runtimeConfig.keyVault.mode === "env_fallback"
+        ? "env-fallback"
+        : "env";
     // eslint-disable-next-line no-console
-    console.log(`Chat API ready on http://localhost:${port} (auth mode: ${authMode})`);
+    console.log(
+      `Chat API ready on http://localhost:${port} (auth mode: ${authMode}, secret source: ${keyVaultSource}, web origin: ${process.env.KEY_VAULT_SECRET_COSMOS_CONNECTION_STRING})`
+    );
+    if (runtimeConfig.keyVault.enabled) {
+      const fetchedKeys = runtimeConfig.keyVault.fetched.map((entry) => entry.targetEnv).join(", ");
+      // eslint-disable-next-line no-console
+      console.log(
+        `Key Vault enabled (${runtimeConfig.keyVault.uri}). Loaded env keys: ${fetchedKeys || "none"}`
+      );
+    }
   });
 }
 
