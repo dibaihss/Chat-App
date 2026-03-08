@@ -1,4 +1,4 @@
-# Chat App Monorepo
+# Here Chat App Monorepo
 
 Next.js frontend + Socket.IO/Express backend + Cosmos DB + Azure Entra ID auth.
 
