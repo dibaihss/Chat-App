@@ -1,0 +1,16 @@
+FROM node:20-alpine AS base
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+COPY apps/chat-api/package.json apps/chat-api/package.json
+COPY apps/web/package.json apps/web/package.json
+COPY packages/shared/package.json packages/shared/package.json
+
+RUN npm ci --omit=dev
+
+COPY . .
+
+ENV NODE_ENV=production
+EXPOSE 3001
+
+CMD ["npm", "run", "start:api"]
