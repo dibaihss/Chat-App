@@ -31,19 +31,21 @@ jobs:
           tenant-id: ${{ secrets.CHATAPPWEB_AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.CHATAPPWEB_AZURE_SUBSCRIPTION_ID }}
 
+
       - name: Build and push container image to registry
         uses: azure/container-apps-deploy-action@v2
         with:
-          appSourcePath: ${{ github.workspace }}/Dockerfile.web
-          _dockerfilePathKey_: _dockerfilePath_
-          _targetLabelKey_: _targetLabel_
+          appSourcePath: ${{ github.workspace }}
+          dockerfilePath: Dockerfile.web
+          targetLabel: latest
           registryUrl: chatappwebregistry.azurecr.io
           registryUsername: ${{ secrets.CHATAPPWEB_REGISTRY_USERNAME }}
           registryPassword: ${{ secrets.CHATAPPWEB_REGISTRY_PASSWORD }}
           containerAppName: chat-app-web
           resourceGroup: rg-chat-app
           imageToBuild: chatappwebregistry.azurecr.io/chat-app-web:${{ github.sha }}
-          _buildArgumentsKey_: |
-            _buildArgumentsValues_
+          buildArguments: |
+            NODE_ENV=production
+      
 
 
