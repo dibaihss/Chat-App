@@ -1,0 +1,38 @@
+FROM node:20-alpine AS build
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+COPY apps/chat-api/package.json apps/chat-api/package.json
+COPY apps/web/package.json apps/web/package.json
+COPY packages/shared/package.json packages/shared/package.json
+
+RUN npm ci --omit=dev
+
+COPY . .
+
+ARG NEXT_PUBLIC_CHAT_API_URL=https://chat-app-api.wittybush-ae93a426.centralus.azurecontainerapps.io/
+ARG NEXT_PUBLIC_ENTRA_CLIENT_ID=
+ARG NEXT_PUBLIC_ENTRA_TENANT_ID=
+ARG NEXT_PUBLIC_ENTRA_AUTHORITY=
+ARG NEXT_PUBLIC_ENTRA_REDIRECT_URI=https://chat-app-web.wittybush-ae93a426.centralus.azurecontainerapps.io
+ARG NEXT_PUBLIC_CHAT_API_SCOPE=
+
+ENV NEXT_PUBLIC_CHAT_API_URL=${NEXT_PUBLIC_CHAT_API_URL}
+ENV NEXT_PUBLIC_ENTRA_CLIENT_ID=${NEXT_PUBLIC_ENTRA_CLIENT_ID}
+ENV NEXT_PUBLIC_ENTRA_TENANT_ID=${NEXT_PUBLIC_ENTRA_TENANT_ID}
+ENV NEXT_PUBLIC_ENTRA_AUTHORITY=${NEXT_PUBLIC_ENTRA_AUTHORITY}
+ENV NEXT_PUBLIC_ENTRA_REDIRECT_URI=${NEXT_PUBLIC_ENTRA_REDIRECT_URI}
+ENV NEXT_PUBLIC_CHAT_API_SCOPE=${NEXT_PUBLIC_CHAT_API_SCOPE}
+ENV NODE_ENV=production
+
+RUN npm run build -w apps/web
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+
+COPY --from=build /app /app
+
+ENV NODE_ENV=production
+EXPOSE 3000
+
+CMD ["npm", "run", "start:web"]

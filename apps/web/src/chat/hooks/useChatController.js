@@ -43,8 +43,10 @@ export function useChatController() {
 
   useEffect(() => {
     const socket = io(apiBaseUrl, {
+      transports: ["websocket"],
       autoConnect: false,
       auth: (cb) => {
+        console.log("Providing auth token for socket connection:", tokenRef.current);
         cb({ token: tokenRef.current });
       }
     });

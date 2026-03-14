@@ -133,6 +133,78 @@ URLs:
 - API: `http://localhost:3001`
 - Health: `http://localhost:3001/health`
 
+## 7) Run With Docker
+
+Build and run both services:
+
+```bash
+docker compose up --build
+```
+
+Run in detached mode:
+
+```bash
+docker compose up --build -d
+```
+
+Stop:
+
+```bash
+docker compose down
+```
+
+Publish images:
+
+```bash
+docker build -f Dockerfile.api -t <registry>/chat-app-api:<tag> .
+docker build -f Dockerfile.web \
+  --build-arg NEXT_PUBLIC_CHAT_API_SCOPE=api://<API_APP_CLIENT_ID>/Chat.Access \
+  -t <registry>/chat-app-web:<tag> .
+docker push <registry>/chat-app-api:<tag>
+docker push <registry>/chat-app-web:<tag>
+```
+
+Notes:
+- `web` uses `NEXT_PUBLIC_*` build args from your shell environment (or defaults in `docker-compose.yml`).
+- `chat-api` reads runtime env values (including Key Vault settings) from `docker-compose.yml`.
+
+### Production compose (prebuilt images, no local build)
+
+Set required environment variables in your shell or deployment system:
+
+```bash
+CHAT_API_IMAGE=<registry>/chat-app-api:<tag>
+WEB_IMAGE=<registry>/chat-app-web:<tag>
+WEB_ORIGIN=https://<your-web-domain>
+```
+
+Start:
+
+```bash
+docker compose -f compose.prod.yml pull
+docker compose -f compose.prod.yml up -d
+```
+
+Inspect:
+
+```bash
+docker compose -f compose.prod.yml ps
+docker compose -f compose.prod.yml logs -f
+```
+
+Stop:
+
+```bash
+docker compose -f compose.prod.yml down
+```
+
+Rebuild only the web image (to apply changed `NEXT_PUBLIC_*` values):
+
+```bash
+docker compose -f compose.prod.yml --profile build-web build web
+docker compose -f compose.prod.yml up -d
+```
+
 ## Expected login/data flow
 
 1. User signs in via Microsoft on web app.
