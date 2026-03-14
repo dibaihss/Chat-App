@@ -43,14 +43,15 @@ jobs:
           containerAppName: chat-app-web
           resourceGroup: rg-chat-app
           imageToBuild: chatappwebregistry.azurecr.io/chat-app-web:${{ github.sha }}
-         buildArguments: |
-          NEXT_PUBLIC_CHAT_API_URL=${{ secrets.NEXT_PUBLIC_CHAT_API_URL }}
-          NEXT_PUBLIC_ENTRA_CLIENT_ID=${{ secrets.NEXT_PUBLIC_ENTRA_CLIENT_ID }}
-          NEXT_PUBLIC_ENTRA_TENANT_ID=${{ secrets.NEXT_PUBLIC_ENTRA_TENANT_ID }}
-          NEXT_PUBLIC_ENTRA_AUTHORITY=${{ secrets.NEXT_PUBLIC_ENTRA_AUTHORITY }}
-          NEXT_PUBLIC_ENTRA_REDIRECT_URI=${{ secrets.NEXT_PUBLIC_ENTRA_REDIRECT_URI }}
-          NEXT_PUBLIC_CHAT_API_SCOPE=${{ secrets.NEXT_PUBLIC_CHAT_API_SCOPE }}
-          NODE_ENV=production
+          buildArguments: |
+            NEXT_PUBLIC_CHAT_API_URL=${{ secrets.NEXT_PUBLIC_CHAT_API_URL }}
+            NEXT_PUBLIC_ENTRA_CLIENT_ID=${{ secrets.NEXT_PUBLIC_ENTRA_CLIENT_ID }}
+            NEXT_PUBLIC_ENTRA_TENANT_ID=${{ secrets.NEXT_PUBLIC_ENTRA_TENANT_ID }}
+            NEXT_PUBLIC_ENTRA_AUTHORITY=${{ secrets.NEXT_PUBLIC_ENTRA_AUTHORITY }}
+            NEXT_PUBLIC_ENTRA_REDIRECT_URI=${{ secrets.NEXT_PUBLIC_ENTRA_REDIRECT_URI }}
+            NEXT_PUBLIC_CHAT_API_SCOPE=${{ secrets.NEXT_PUBLIC_CHAT_API_SCOPE }}
+            NODE_ENV=production
+
 
       
 
