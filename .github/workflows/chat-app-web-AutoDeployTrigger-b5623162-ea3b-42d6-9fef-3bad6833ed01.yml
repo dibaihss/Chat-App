@@ -37,7 +37,6 @@ jobs:
         with:
           appSourcePath: ${{ github.workspace }}
           dockerfilePath: Dockerfile.web
-          targetLabel: latest
           registryUrl: chatappwebregistry.azurecr.io
           registryUsername: ${{ secrets.CHATAPPWEB_REGISTRY_USERNAME }}
           registryPassword: ${{ secrets.CHATAPPWEB_REGISTRY_PASSWORD }}
