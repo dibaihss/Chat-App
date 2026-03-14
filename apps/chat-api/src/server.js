@@ -371,7 +371,7 @@ async function main() {
         : "env";
     // eslint-disable-next-line no-console
     console.log(
-      `Chat API ready on http://localhost:${port} (auth mode: ${authMode}, secret source: ${keyVaultSource}, web origin: ${process.env.KEY_VAULT_SECRET_COSMOS_CONNECTION_STRING})`
+      `Chat API ready on http://localhost:${port} (auth mode: ${authMode}, secret source: ${keyVaultSource}, web origin: ${process.env.WEB_ORIGIN})`
     );
     if (runtimeConfig.keyVault.enabled) {
       const fetchedKeys = runtimeConfig.keyVault.fetched.map((entry) => entry.targetEnv).join(", ");
