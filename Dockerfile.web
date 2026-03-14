@@ -10,11 +10,11 @@ RUN npm ci --omit=dev
 
 COPY . .
 
-ARG NEXT_PUBLIC_CHAT_API_URL=http://localhost:3001
+ARG NEXT_PUBLIC_CHAT_API_URL=https://chat-app-api.wittybush-ae93a426.centralus.azurecontainerapps.io/
 ARG NEXT_PUBLIC_ENTRA_CLIENT_ID=
 ARG NEXT_PUBLIC_ENTRA_TENANT_ID=
 ARG NEXT_PUBLIC_ENTRA_AUTHORITY=
-ARG NEXT_PUBLIC_ENTRA_REDIRECT_URI=http://localhost:3000
+ARG NEXT_PUBLIC_ENTRA_REDIRECT_URI=https://chat-app-web.wittybush-ae93a426.centralus.azurecontainerapps.io
 ARG NEXT_PUBLIC_CHAT_API_SCOPE=
 
 ENV NEXT_PUBLIC_CHAT_API_URL=${NEXT_PUBLIC_CHAT_API_URL}
