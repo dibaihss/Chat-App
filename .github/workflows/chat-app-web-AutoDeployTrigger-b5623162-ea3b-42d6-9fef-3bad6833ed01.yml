@@ -49,7 +49,7 @@ jobs:
             NEXT_PUBLIC_ENTRA_TENANT_ID=${{ secrets.NEXT_PUBLIC_ENTRA_TENANT_ID }}
             NEXT_PUBLIC_ENTRA_AUTHORITY=${{ secrets.NEXT_PUBLIC_ENTRA_AUTHORITY }}
             NEXT_PUBLIC_ENTRA_REDIRECT_URI=${{ secrets.NEXT_PUBLIC_ENTRA_REDIRECT_URI }}
-            NEXT_PUBLIC_CHAT_API_SCOPE=${{ secrets.NEXT_PUBLIC_CHAT_API_SCOPE }}
+            NEXT_PUBLIC_CHAT_API_SCOPE=${{ secrets.next-public-chat-api-scope }}
             NODE_ENV=production
 
 
