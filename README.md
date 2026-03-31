@@ -205,6 +205,69 @@ docker compose -f compose.prod.yml --profile build-web build web
 docker compose -f compose.prod.yml up -d
 ```
 
+## 8) Infrastructure (Terraform)
+
+Terraform foundation lives in `infra/` and is currently scoped to `dev`.
+
+### What Terraform manages in phase 1
+
+- Resource Group
+- Virtual Network + subnets for App Gateway, App Service integration, and private endpoints
+- Key Vault (soft-delete and purge protection enabled, public network access disabled)
+- Storage Account (TLS1.2+, no public blob access)
+- Log Analytics + Application Insights
+
+### Prerequisites
+
+- Terraform `>= 1.6.0`
+- Azure credentials with access to your target subscription
+- Pre-created remote state backend resources:
+  - Resource Group (for example `rg-tf-state`)
+  - Storage Account (globally unique)
+  - Blob Container (for example `tfstate`)
+
+### Local Terraform commands
+
+```bash
+cd infra
+terraform fmt -check -recursive
+terraform init \
+  -backend-config="resource_group_name=<rg-tf-state>" \
+  -backend-config="storage_account_name=<tfstate-storage-account>" \
+  -backend-config="container_name=tfstate" \
+  -backend-config="key=chat-app-dev.tfstate"
+terraform validate
+terraform plan -var-file=dev.tfvars
+```
+
+### GitHub Actions behavior
+
+Workflow: `.github/workflows/terraform-foundation.yml`
+
+- Pull Requests: `fmt`, `init`, `validate`, `plan` and upload plan artifact
+- Push to `main`: `fmt`, `init`, `validate`, `plan`, then `apply` for `dev.tfvars`
+
+Required GitHub configuration:
+
+- Secrets:
+  - `TF_AZURE_CLIENT_ID`
+  - `TF_AZURE_TENANT_ID`
+  - `TF_AZURE_SUBSCRIPTION_ID`
+- Repository Variables:
+  - `TFSTATE_RESOURCE_GROUP`
+  - `TFSTATE_STORAGE_ACCOUNT`
+  - `TFSTATE_CONTAINER`
+
+### Terraform outputs for app integration
+
+Key outputs from `infra/outputs.tf` are intended for downstream app/runtime wiring:
+
+- `resource_group_name`
+- `key_vault_uri`
+- `subnet_ids`
+- `application_insights_connection_string` (sensitive)
+- `storage_account_name`
+
 ## Expected login/data flow
 
 1. User signs in via Microsoft on web app.
@@ -240,3 +303,4 @@ docker compose -f compose.prod.yml up -d
 ## Security note
 
 Never commit real secrets (`COSMOS_KEY`, connection strings, tokens). If leaked, rotate keys immediately.
+
